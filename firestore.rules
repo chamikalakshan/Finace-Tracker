@@ -1,0 +1,48 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function ownsUserDocument(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function validTransactionKeys() {
+      return request.resource.data.keys().hasOnly([
+        'title',
+        'amountCents',
+        'type',
+        'note',
+        'ownerId',
+        'createdAt',
+        'updatedAt'
+      ]);
+    }
+
+    function validTransaction(userId) {
+      return validTransactionKeys()
+        && request.resource.data.ownerId == userId
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.amountCents is int
+        && request.resource.data.amountCents > 0
+        && request.resource.data.type in ['INCOME', 'EXPENSE']
+        && request.resource.data.note is string
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow read, write: if ownsUserDocument(userId);
+
+      match /transactions/{transactionId} {
+        allow read: if ownsUserDocument(userId);
+        allow create, update: if ownsUserDocument(userId) && validTransaction(userId);
+        allow delete: if ownsUserDocument(userId);
+      }
+    }
+  }
+}
